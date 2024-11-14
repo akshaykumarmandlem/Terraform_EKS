@@ -1,22 +1,35 @@
+# Get current AWS account details
 data "aws_caller_identity" "current" {}
+
+# The manager IAM user has the AmazonEKSAssumeAdminPolicy attached via aws_iam_user_policy_attachment.manager
+# This policy allows the manager to assume the eks_admin role
+
+# The eks_admin role has:
+# 1. Custom AmazonEKSAdminPolicy attached (allows eks:* actions) 
+# 2. AWS managed AmazonEKSClusterPolicy attached
+# 3. Trust policy allowing the account root to assume the role
+
+# NOTE: The trust policy should also allow the manager IAM user to assume the role
+# Add the manager user ARN to the Principal list
 
 resource "aws_iam_role" "eks_admin" {
   name = "${local.env}-${local.eks_name}-eks-admin"
 
-  assume_role_policy = <<POLICY
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": "sts:AssumeRole",
-      "Principal": {
-        "AWS": "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+  assume_role_policy = jsonencode({
+    "Version" : "2012-10-17",
+    "Statement" : [
+      {
+        "Effect" : "Allow",
+        "Action" : "sts:AssumeRole",
+        "Principal" : {
+          "AWS" : [
+            data.aws_caller_identity.current.arn,
+            "arn:aws:iam::${data.aws_caller_identity.current.account_id}:user/manager"
+          ]
+        }
       }
-    }
-  ]
-}
-POLICY
+    ]
+  })
 }
 
 resource "aws_iam_policy" "eks_admin" {
@@ -27,7 +40,7 @@ resource "aws_iam_policy" "eks_admin" {
     "Version": "2012-10-17",
     "Statement": [
         {
-            "Effect": "Allow",
+            "Effect": "Allow", 
             "Action": [
                 "eks:*"
             ],
@@ -36,7 +49,7 @@ resource "aws_iam_policy" "eks_admin" {
         {
             "Effect": "Allow",
             "Action": "iam:PassRole",
-            "Resource": ["*"],
+            "Resource": "*",
             "Condition": {
                 "StringEquals": {
                     "iam:PassedToService": "eks.amazonaws.com"
